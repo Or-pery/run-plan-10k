@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ריצה"><meta name="theme-color" content="#2563eb"><title>תכנית ריצה ל-10 ק״מ</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1c1c1e;--mut:#6b7280;--card:#f3f4f6;--line:#e5e7eb;--acc:#2563eb;--easy:#15803d;--q:#c2410c;--long:#6d28d9;--race:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111214;--fg:#f2f2f3;--mut:#9ca3af;--card:#1c1d20;--line:#2c2e33;--acc:#60a5fa;--easy:#4ade80;--q:#fb923c;--long:#a78bfa;--race:#f87171}}
+:root[data-theme="dark"]{--bg:#111214;--fg:#f2f2f3;--mut:#9ca3af;--card:#1c1d20;--line:#2c2e33;--acc:#60a5fa;--easy:#4ade80;--q:#fb923c;--long:#a78bfa;--race:#f87171}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+body{padding:12px;max-width:900px;margin:0 auto}
+h1{font-size:20px;margin:4px 0}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0}
+button{font:inherit;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 12px}
+button.p{background:var(--acc);color:#fff;border-color:var(--acc)}
+#sum{color:var(--mut);font-size:13px;margin-bottom:8px}
+.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.dh{font-size:11px;color:var(--mut);text-align:center;padding:2px 0}
+.cell{min-height:78px;background:var(--card);border-radius:6px;padding:3px;border:1px solid transparent}
+.cell.out{opacity:.35}
+.cell.today{border-color:var(--acc)}
+.cell.over{background:color-mix(in srgb,var(--acc) 25%,var(--card))}
+.d{font-size:11px;color:var(--mut)}
+.chip{display:block;font-size:11px;line-height:1.25;border-radius:5px;padding:3px 4px;margin-top:2px;color:#fff;cursor:grab;word-break:break-word}
+.chip.easy{background:var(--easy)}.chip.quality{background:var(--q)}.chip.long{background:var(--long)}.chip.race{background:var(--race)}
+:root:not([data-theme="light"]) .chip{color:#111}
+.chip.done{opacity:.55;text-decoration:line-through}
+.chip.done::after{content:" ✓"}
+.leg{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:10px}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);width:min(92vw,420px);padding:16px}
+dialog::backdrop{background:#0008}
+label{display:block;font-size:13px;margin-top:8px;color:var(--mut)}
+input,textarea{width:100%;font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.desc{font-size:14px;margin:6px 0;white-space:pre-line}
+.act{display:flex;gap:8px;margin-top:14px}
+#msg{color:var(--mut);font-size:13px}
+</style>
+</head>
+<body>
+<h1>תכנית ריצה ל-10 ק״מ · יעד 6:00 לק״מ</h1>
+<div id="msg">טוען…</div>
+<div class="top"><button id="nx">קודם</button><b id="mt"></b><button id="pv">הבא</button></div>
+<div id="sum"></div>
+<div class="grid" id="g"></div>
+<div class="leg"><span style="color:var(--easy)">■ קל</span><span style="color:var(--q)">■ איכות</span><span style="color:var(--long)">■ ארוכה</span><span style="color:var(--race)">■ מירוץ</span><span>גרירה במחשב · בטלפון: לחיצה ושינוי תאריך</span></div>
+<div class="top"><button id="ex">ייצוא נתונים</button><button id="im">ייבוא נתונים</button></div>
+
+<dialog id="dl">
+  <b id="dt"></b>
+  <div class="desc" id="dd"></div>
+  <label>תאריך<input type="date" id="fd"></label>
+  <label><input type="checkbox" id="fk" style="width:auto"> בוצע</label>
+  <div class="row"><label>ק״מ בפועל<input id="fkm" inputmode="decimal"></label><label>זמן (דק׳:שנ׳)<input id="ftm" placeholder="58:30"></label></div>
+  <div class="row"><label>דופק ממוצע<input id="fhr" inputmode="numeric"></label><label>מאמץ 1–10<input id="frp" inputmode="numeric"></label></div>
+  <label>הערות<textarea id="fn" rows="2"></textarea></label>
+  <div class="act"><button class="p" id="sv">שמור</button><button id="cl">סגור</button></div>
+</dialog>
+
+<script>
+const $=s=>document.querySelector(s);
+const pad=n=>String(n).padStart(2,"0");
+const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const MN=["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+const MONTHS=[[2026,10],[2026,11],[2027,0]];
+let mi=0,W={},db=null,sel=null,col=null;
+const today=ymd(new Date());
+
+function render(){
+  const [y,m]=MONTHS[mi];
+  $("#mt").textContent=MN[m]+" "+y;
+  $("#nx").disabled=mi===0;$("#pv").disabled=mi===MONTHS.length-1;
+  const g=$("#g");g.textContent="";
+  ["א׳","ב׳","ג׳","ד׳","ה׳","ו׳","ש׳"].forEach(t=>{const e=document.createElement("div");e.className="dh";e.textContent=t;g.appendChild(e)});
+  const first=new Date(y,m,1),start=new Date(y,m,1-first.getDay());
+  for(let i=0;i<42;i++){
+    const d=new Date(start.getFullYear(),start.getMonth(),start.getDate()+i),k=ymd(d);
+    if(i>=35&&d.getMonth()!==m)break;
+    const c=document.createElement("div");
+    c.className="cell"+(d.getMonth()!==m?" out":"")+(k===today?" today":"");
+    const n=document.createElement("div");n.className="d";n.textContent=d.getDate();c.appendChild(n);
+    c.addEventListener("dragover",e=>{e.preventDefault();c.classList.add("over")});
+    c.addEventListener("dragleave",()=>c.classList.remove("over"));
+    c.addEventListener("drop",e=>{e.preventDefault();c.classList.remove("over");const id=e.dataTransfer.getData("text/plain");if(W[id]&&W[id].date!==k)save(id,{date:k})});
+    Object.entries(W).filter(([,w])=>w.date===k).forEach(([id,w])=>{
+      const ch=document.createElement("div");
+      ch.className="chip "+(w.type||"easy")+(w.done?" done":"");
+      ch.textContent=w.title;ch.draggable=true;
+      ch.addEventListener("dragstart",e=>e.dataTransfer.setData("text/plain",id));
+      ch.addEventListener("click",()=>openD(id));
+      c.appendChild(ch);
+    });
+    g.appendChild(c);
+  }
+  const all=Object.values(W),pk=all.reduce((a,w)=>a+(+w.km||0),0),dn=all.filter(w=>w.done);
+  const dk=dn.reduce((a,w)=>a+(+(w.res&&w.res.km)||+w.km||0),0);
+  $("#sum").textContent=all.length?`בוצעו ${dn.length} מתוך ${all.length} אימונים · ${dk.toFixed(1)} מתוך ${pk.toFixed(1)} ק״מ`:"";
+}
+function openD(id){
+  sel=id;const w=W[id],r=w.res||{};
+  $("#dt").textContent=w.title;$("#dd").textContent=w.desc||"";
+  $("#fd").value=w.date;$("#fk").checked=!!w.done;
+  $("#fkm").value=r.km||"";$("#ftm").value=r.time||"";$("#fhr").value=r.hr||"";$("#frp").value=r.rpe||"";$("#fn").value=r.notes||"";
+  $("#dl").showModal();
+}
+function save(id,patch){
+  if(patch.date&&patch.date!==W[id].date)patch.moved=true;
+  Object.assign(W[id],patch);persist();render();
+}
+$("#sv").onclick=async()=>{
+  const res={km:$("#fkm").value.trim(),time:$("#ftm").value.trim(),hr:$("#fhr").value.trim(),rpe:$("#frp").value.trim(),notes:$("#fn").value.trim()};
+  const hasRes=Object.values(res).some(Boolean);
+  save(sel,{date:$("#fd").value||W[sel].date,done:$("#fk").checked||hasRes,res});
+  $("#dl").close();
+};
+$("#cl").onclick=()=>$("#dl").close();
+$("#nx").onclick=()=>{if(mi>0){mi--;render()}};
+$("#pv").onclick=()=>{if(mi<MONTHS.length-1){mi++;render()}};
+const t0=new Date();if(t0.getFullYear()===2026&&t0.getMonth()===11)mi=1;else if(t0.getFullYear()===2027)mi=2;
+render();
+const KEY="runplan_v1";
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(W))}catch(e){}}
+async function init(){
+  let loc={};try{loc=JSON.parse(localStorage.getItem(KEY)||"{}") }catch(e){}
+  let plan={};
+  try{const r=await fetch("plan.json",{cache:"no-cache"});plan=(await r.json()).workouts}catch(e){plan=null}
+  if(!plan)plan={};
+  W={};
+  for(const [id,p] of Object.entries(plan)){
+    const l=loc[id]||{};
+    W[id]=Object.assign({},p,{done:l.done??p.done,res:l.res||p.res});
+    if(l.moved){W[id].date=l.date;W[id].moved=true}
+  }
+  for(const [id,l] of Object.entries(loc))if(!W[id])W[id]=l;
+  persist();$("#msg").textContent="";render();
+}
+$("#ex").onclick=async()=>{
+  const t=JSON.stringify(W);
+  try{await navigator.clipboard.writeText(t);$("#msg").textContent="הועתק ללוח. אפשר להדביק אצל Claude."}
+  catch(e){prompt("העתק:",t)}
+};
+$("#im").onclick=()=>{
+  const t=prompt("הדבק JSON");if(!t)return;
+  try{const o=JSON.parse(t);Object.assign(W,o);persist();render();$("#msg").textContent="יובא."}catch(e){$("#msg").textContent="JSON לא תקין."}
+};
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+init();
+</script>
+</body>
+</html>

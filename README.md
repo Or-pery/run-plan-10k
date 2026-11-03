@@ -1,0 +1,1 @@
+A static, Hebrew right-to-left running-plan calendar PWA; workout data stays in the browser in localStorage, and the plan is stored in plan.json.
