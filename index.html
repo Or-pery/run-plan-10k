@@ -37,6 +37,7 @@ input,textarea{width:100%;font:inherit;padding:7px;border-radius:8px;border:1px 
 .desc{font-size:14px;margin:6px 0;white-space:pre-line}
 .act{display:flex;gap:8px;margin-top:14px}
 #msg{color:var(--mut);font-size:13px}
+#dt:focus{outline:none}
 </style>
 </head>
 <body>
@@ -50,9 +51,12 @@ input,textarea{width:100%;font:inherit;padding:7px;border-radius:8px;border:1px 
 <div class="top"><button id="ex">ייצוא נתונים</button><button id="im">ייבוא נתונים</button></div>
 
 <dialog id="dl">
-  <b id="dt"></b>
+  <b id="dt" tabindex="-1" autofocus></b>
   <div class="desc" id="dd"></div>
-  <label>תאריך<input type="date" id="fd"></label>
+  <div class="row" style="align-items:center"><span id="dtx"></span><button type="button" id="dbtn">שנה תאריך</button></div>
+  <input type="date" id="fd" hidden>
+  <label>ייבוא מקובץ (TCX, GPX, JSON) או צילום מסך<input type="file" id="ff" accept="image/*,.tcx,.gpx,.json"></label>
+  <div class="desc" id="fs"></div>
   <label><input type="checkbox" id="fk" style="width:auto"> בוצע</label>
   <div class="row"><label>ק״מ בפועל<input id="fkm" inputmode="decimal"></label><label>זמן (דק׳:שנ׳)<input id="ftm" placeholder="58:30"></label></div>
   <div class="row"><label>דופק ממוצע<input id="fhr" inputmode="numeric"></label><label>מאמץ 1–10<input id="frp" inputmode="numeric"></label></div>
@@ -102,7 +106,8 @@ function render(){
 function openD(id){
   sel=id;const w=W[id],r=w.res||{};
   $("#dt").textContent=w.title;$("#dd").textContent=w.desc||"";
-  $("#fd").value=w.date;$("#fk").checked=!!w.done;
+  $("#fd").value=w.date;$("#fd").hidden=true;$("#dtx").textContent=w.date.split("-").reverse().join("/");
+  $("#fs").textContent="";$("#ff").value="";$("#fk").checked=!!w.done;
   $("#fkm").value=r.km||"";$("#ftm").value=r.time||"";$("#fhr").value=r.hr||"";$("#frp").value=r.rpe||"";$("#fn").value=r.notes||"";
   $("#dl").showModal();
 }
@@ -135,8 +140,9 @@ async function cloudStart(){
     if(!cfg||!cfg.apiKey)return;
     const [A,Au,F]=await Promise.all([import(U+"firebase-app.js"),import(U+"firebase-auth.js"),import(U+"firebase-firestore.js")]);
     const app=A.initializeApp(cfg),auth=Au.getAuth(app),fdb=F.getFirestore(app);
-    CL={save:(uid,data)=>F.setDoc(F.doc(fdb,"users",uid),{data,updated:Date.now()}),
-        load:async uid=>{const s=await F.getDoc(F.doc(fdb,"users",uid));return s.exists()?s.data().data:null}};
+    CL={save:(uid,data)=>F.setDoc(F.doc(fdb,"users",uid),{data,updated:Date.now()},{merge:true}),
+        raw:(uid,o)=>F.setDoc(F.doc(fdb,"users",uid),o,{merge:true}),
+        load:async uid=>{const s=await F.getDoc(F.doc(fdb,"users",uid));window.CLOUD_DOC=s.exists()?s.data():null;return s.exists()?s.data().data:null}};
     $("#auth").hidden=false;
     $("#lg").onclick=async()=>{
       if(USER){
@@ -164,6 +170,7 @@ async function cloudStart(){
           try{localStorage.setItem(KEY,JSON.stringify(W))}catch(e){}
           render();
         }else persist();
+        if(window.afterLogin)window.afterLogin(u);
       }catch(e){$("#msg").textContent="הטעינה מהענן נכשלה"}
     });
   }catch(e){}
@@ -194,5 +201,7 @@ $("#im").onclick=()=>{
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 init().then(cloudStart);
 </script>
+<script src="onboarding.js"></script>
+<script src="workout-tools.js"></script>
 </body>
 </html>
