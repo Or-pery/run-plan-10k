@@ -23,13 +23,28 @@ function fromXml(t,gpx){
   return{km:m/1000,sec:tm.length>1?(tm[tm.length-1]-tm[0])/1000:0,hr};
 }
 
+async function prep(f){
+  const b=await createImageBitmap(f),s=Math.min(2,2200/Math.max(b.width,b.height)),cv=document.createElement("canvas");
+  cv.width=Math.round(b.width*s);cv.height=Math.round(b.height*s);
+  const x=cv.getContext("2d");x.drawImage(b,0,0,cv.width,cv.height);
+  const im=x.getImageData(0,0,cv.width,cv.height),d=im.data;let sum=0;
+  for(let i=0;i<d.length;i+=4)sum+=Math.max(d[i],d[i+1],d[i+2]);
+  const dark=sum/(d.length/4)<110;
+  for(let i=0;i<d.length;i+=4){
+    const o=dark?(255-Math.max(d[i],d[i+1],d[i+2])>170?255:0):((d[i]*.3+d[i+1]*.59+d[i+2]*.11)>140?255:0);
+    d[i]=d[i+1]=d[i+2]=o;
+  }
+  x.putImageData(im,0,0);return cv;
+}
+
 async function ocr(f){
   if(!window.Tesseract)await new Promise((ok,no)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
-  const {data:{text}}=await Tesseract.recognize(f,"heb+eng");
-  const hr=(text.match(/(\d{2,3})\s*(?:פעמ|bpm)/i)||[])[1];
-  const km=(text.match(/(\d+[.,]\d+|\d+)\s*(?:ק["״”']?מ|km)/i)||[])[1];
-  const tm=(text.match(/(?:זמן|duration|time)[^\d]{0,15}(\d{1,2}:\d{2}(?::\d{2})?)/i)||text.match(/(?:^|\s)(\d{1,2}:\d{2}:\d{2})(?:\s|$)/)||[])[1];
-  return{hr:hr?+hr:0,km:km?+km.replace(",","."):0,time:tm||"",notes:"נקרא מתמונה (זיהוי טקסט), יש לבדוק את הערכים"};
+  const {data:{text}}=await Tesseract.recognize(await prep(f),"heb+eng");
+  window.LAST_OCR=text;
+  const hr=(text.match(/(\d{2,3})\s*(?:פע|bpm)/i)||text.match(/קצב לב[^\d]{0,25}(\d{2,3})/)||[])[1];
+  const km=(text.match(/(\d+[.,]\d+)\s*(?:ק|km)/i)||text.match(/מרחק[^\d]{0,12}(\d+[.,]?\d*)/)||[])[1];
+  const tm=(text.match(/(?:^|[^\d:])(\d{1,2}:\d{2}:\d{2})(?![\d:])/)||[])[1];
+  return{hr:hr?+hr:0,km:km?+km.replace(",","."):0,time:tm?tm.replace(/^0:/,""):"",notes:"נקרא מתמונה (זיהוי טקסט), יש לבדוק את הערכים"};
 }
 
 document.addEventListener("change",async e=>{
@@ -44,9 +59,23 @@ document.addEventListener("change",async e=>{
     set("#fkm",km);set("#ftm",time);set("#fhr",hr);
     if(r.notes)$("#fn").value=($("#fn").value?$("#fn").value+"\n":"")+r.notes;
     if(km||time||hr)$("#fk").checked=true;
-    st.textContent=(km||time||hr)?"מולאו: "+[km&&km+" ק״מ",time,hr&&"דופק "+hr].filter(Boolean).join(" · ")+". בדוק ולחץ שמור.":"לא זוהו נתונים בקובץ. אפשר למלא ידנית.";
+    st.textContent=(km||time||hr)?"מולאו: "+[km&&km+" ק״מ",time,hr&&"דופק "+hr].filter(Boolean).join(" · ")+". בדוק ולחץ שמור.":"לא זוהו נתונים. אפשר למלא ידנית.";
   }catch(err){st.textContent="לא הצלחתי לקרוא את הקובץ. אפשר למלא ידנית."}
 });
 $("#dbtn").onclick=()=>{const f=$("#fd");f.hidden=false;try{f.showPicker()}catch(e){f.focus()}};
 $("#fd").onchange=()=>{$("#dtx").textContent=$("#fd").value.split("-").reverse().join("/")};
+
+// Results logged by Claude in results.json are applied once per version.
+(async()=>{
+  for(let i=0;i<40;i++){try{if(Object.keys(W).length)break}catch(e){}await new Promise(r=>setTimeout(r,250))}
+  try{
+    const r=await (await fetch("results.json",{cache:"no-cache"})).json();
+    const seen=JSON.parse(localStorage.getItem("runplan_seeded")||"{}");let ch=false;
+    for(const [id,o] of Object.entries(r)){
+      if(!W[id]||seen[id]===o.v)continue;
+      W[id].done=true;W[id].res=Object.assign({},W[id].res||{},o.res);seen[id]=o.v;ch=true;
+    }
+    if(ch){localStorage.setItem("runplan_seeded",JSON.stringify(seen));persist();render()}
+  }catch(e){}
+})();
 })();
