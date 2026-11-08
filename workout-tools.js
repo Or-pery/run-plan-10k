@@ -23,28 +23,51 @@ function fromXml(t,gpx){
   return{km:m/1000,sec:tm.length>1?(tm[tm.length-1]-tm[0])/1000:0,hr};
 }
 
-async function prep(f){
-  const b=await createImageBitmap(f),s=Math.min(2,2200/Math.max(b.width,b.height)),cv=document.createElement("canvas");
-  cv.width=Math.round(b.width*s);cv.height=Math.round(b.height*s);
-  const x=cv.getContext("2d");x.drawImage(b,0,0,cv.width,cv.height);
-  const im=x.getImageData(0,0,cv.width,cv.height),d=im.data;let sum=0;
-  for(let i=0;i<d.length;i+=4)sum+=Math.max(d[i],d[i+1],d[i+2]);
-  const dark=sum/(d.length/4)<110;
-  for(let i=0;i<d.length;i+=4){
-    const o=dark?(255-Math.max(d[i],d[i+1],d[i+2])>170?255:0):((d[i]*.3+d[i+1]*.59+d[i+2]*.11)>140?255:0);
-    d[i]=d[i+1]=d[i+2]=o;
-  }
-  x.putImageData(im,0,0);return cv;
-}
-
+// Screenshot reading: find the Hebrew labels, then read only the number under each label.
 async function ocr(f){
   if(!window.Tesseract)await new Promise((ok,no)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
-  const {data:{text}}=await Tesseract.recognize(await prep(f),"heb+eng");
-  window.LAST_OCR=text;
-  const hr=(text.match(/(\d{2,3})\s*(?:פע|bpm)/i)||text.match(/קצב לב[^\d]{0,25}(\d{2,3})/)||[])[1];
-  const km=(text.match(/(\d+[.,]\d+)\s*(?:ק|km)/i)||text.match(/מרחק[^\d]{0,12}(\d+[.,]?\d*)/)||[])[1];
-  const tm=(text.match(/(?:^|[^\d:])(\d{1,2}:\d{2}:\d{2})(?![\d:])/)||[])[1];
-  return{hr:hr?+hr:0,km:km?+km.replace(",","."):0,time:tm?tm.replace(/^0:/,""):"",notes:"נקרא מתמונה (זיהוי טקסט), יש לבדוק את הערכים"};
+  const bm=await createImageBitmap(f),k0=Math.min(1,3000/Math.max(bm.width,bm.height));
+  const img=document.createElement("canvas");img.width=Math.round(bm.width*k0);img.height=Math.round(bm.height*k0);
+  img.getContext("2d").drawImage(bm,0,0,img.width,img.height);
+  const worker=await Tesseract.createWorker("heb+eng");
+  try{
+    const {data}=await worker.recognize(img);
+    const W=(data.words||[]).map(w=>({t:(w.text||"").replace(/[\u200e\u200f]/g,"").trim(),x0:w.bbox.x0,y0:w.bbox.y0,x1:w.bbox.x1,y1:w.bbox.y1})).filter(w=>w.t);
+    const row=(a,b)=>Math.abs(a.y0-b.y0)<18,has=(a,t)=>W.some(w=>row(w,a)&&w.t.includes(t));
+    const rightOf=a=>Math.max(...W.filter(v=>row(v,a)&&v.x0>=a.x0-5&&v.x1-a.x1<150).map(v=>v.x1));
+    const crop=async(x0,y0,x1,y1,wl)=>{
+      x0=Math.max(0,Math.round(x0));y0=Math.max(0,Math.round(y0));x1=Math.min(img.width,Math.round(x1));y1=Math.min(img.height,Math.round(y1));
+      const w=x1-x0,h=y1-y0;if(w<5||h<5)return"";
+      const t=document.createElement("canvas");t.width=w;t.height=h;const tx=t.getContext("2d");tx.drawImage(img,x0,y0,w,h,0,0,w,h);
+      const d=tx.getImageData(0,0,w,h),p=d.data;let s=0;
+      for(let i=0;i<p.length;i+=4)s+=Math.max(p[i],p[i+1],p[i+2]);
+      const dark=s/(p.length/4)<110;
+      for(let i=0;i<p.length;i+=4){const v=dark?255-Math.max(p[i],p[i+1],p[i+2]):(p[i]*.3+p[i+1]*.59+p[i+2]*.11);p[i]=p[i+1]=p[i+2]=v}
+      tx.putImageData(d,0,0);
+      const c=document.createElement("canvas");c.width=w*3+60;c.height=h*3+60;const cx=c.getContext("2d");
+      cx.fillStyle="#fff";cx.fillRect(0,0,c.width,c.height);cx.imageSmoothingQuality="high";cx.drawImage(t,0,0,w,h,30,30,w*3,h*3);
+      await worker.setParameters({tessedit_pageseg_mode:"7",tessedit_char_whitelist:wl||""});
+      return((await worker.recognize(c)).data.text||"").trim();
+    };
+    const last=(s,re)=>{const m=s.match(re)||[];return m.length?m[m.length-1]:""};
+    const below=(right,a,wide,wl)=>{const h=a.y1-a.y0;return crop(right-wide*h,a.y1,right+15,a.y1+3.4*h,wl)};
+    let km="",time="",hr="",pace="";
+    for(const a of W){
+      if(!km&&a.t==="מרחק"){const s=await below(a.x1,a,14,"");km=last(s,/\d+[.,]\d+/g)||last(s,/\d+/g)}
+      else if(!time&&a.t==="זמן"&&has(a,"האימון")){const s=await below(rightOf(a),a,14,"");time=last(s,/\d{1,2}:\d{2}(?::\d{2})?/g)}
+      else if(!hr&&a.t==="לב"&&has(a,"ממוצע")){const s=await below(rightOf(a),a,14,"");hr=last(s,/\d{2,3}/g)}
+      else if(!pace&&a.t==="קצב"&&!has(a,"לב")){
+        const nx=W.filter(v=>row(v,a)&&v.x1<=a.x0+5&&a.x0-v.x1<80).sort((p,q)=>q.x1-p.x1)[0];
+        if(nx&&nx.t==="ממוצע"){const s=await below(a.x1,a,5,"0123456789'\"");const m=s.match(/(\d)\D?(\d{2})/);if(m)pace=m[1]+":"+m[2]}
+      }
+    }
+    // Fallback to plain text if a label was not found
+    const text=data.text||"";
+    if(!hr)hr=(text.match(/(\d{2,3})\s*(?:פע|bpm)/i)||[])[1]||"";
+    if(!km)km=(text.match(/(\d+[.,]\d+)\s*(?:ק|km)/i)||[])[1]||"";
+    if(!time)time=(text.match(/(?:^|[^\d:])(\d{1,2}:\d{2}:\d{2})(?![\d:])/)||[])[1]||"";
+    return{hr:+hr||0,km:+String(km).replace(",",".")||0,time:String(time).replace(/^0:/,""),notes:"נקרא מתמונה (זיהוי טקסט), יש לבדוק את הערכים"+(pace?"\nקצב ממוצע "+pace+" לק״מ":"")};
+  }finally{await worker.terminate()}
 }
 
 document.addEventListener("change",async e=>{
@@ -60,10 +83,28 @@ document.addEventListener("change",async e=>{
     if(r.notes)$("#fn").value=($("#fn").value?$("#fn").value+"\n":"")+r.notes;
     if(km||time||hr)$("#fk").checked=true;
     st.textContent=(km||time||hr)?"מולאו: "+[km&&km+" ק״מ",time,hr&&"דופק "+hr].filter(Boolean).join(" · ")+". בדוק ולחץ שמור.":"לא זוהו נתונים. אפשר למלא ידנית.";
-  }catch(err){st.textContent="לא הצלחתי לקרוא את הקובץ. אפשר למלא ידנית."}
+  }catch(err){st.textContent="לא הצלחתי לקרוא את הקובץ: "+((err&&err.message)||"שגיאה")+". אפשר למלא ידנית."}
 });
 $("#dbtn").onclick=()=>{const f=$("#fd");f.hidden=false;try{f.showPicker()}catch(e){f.focus()}};
 $("#fd").onchange=()=>{$("#dtx").textContent=$("#fd").value.split("-").reverse().join("/")};
+
+// Show the exact bpm range next to every heart-rate zone mentioned in a workout.
+const ZD=[[null,130],[131,142],[143,155],[156,167],[168,null]];
+function zones(){
+  try{const d=window.CLOUD_DOC;if(d&&d.profile){const p=JSON.parse(d.profile);if(p&&p.age){
+    const mx=p.maxHR||Math.round(208-0.7*p.age),e=[.718,.785,.856,.923].map(x=>Math.round(mx*x));
+    return[[null,e[0]],[e[0]+1,e[1]],[e[1]+1,e[2]],[e[2]+1,e[3]],[e[3]+1,null]];
+  }}}catch(e){}
+  return ZD;
+}
+const rg=(a,b,Z)=>{const lo=Z[a-1][0],hi=Z[b-1][1];return lo==null?"עד "+hi:hi==null?lo+"+":lo+"–"+hi};
+function zt(s){
+  const Z=zones();
+  return s.replace(/אזורים (\d)[–-](\d)(?! ?\()/g,(m,a,b)=>m+" ("+rg(+a,+b,Z)+")")
+    .replace(/(\(?)אזור (\d)(?!\d|[–-]\d|:| ?\()/g,(m,p,a)=>p?m+": "+rg(+a,+a,Z):m+" ("+rg(+a,+a,Z)+")");
+}
+const dd=$("#dd");
+new MutationObserver(()=>{const s=dd.textContent,n=zt(s);if(n!==s)dd.textContent=n}).observe(dd,{childList:true,characterData:true,subtree:true});
 
 // Results logged by Claude in results.json are applied once per version.
 (async()=>{
