@@ -7,7 +7,7 @@ const F=[
 ["weekKm","כמה ק״מ ריצה בשבוע כרגע?","select",["0","1–5","6–15","16–30","מעל 30"]],
 ["longest","הריצה הרציפה הארוכה ביותר לאחרונה (ק״מ, 0 אם אין)","number"],
 ["goalKm","מרחק היעד (ק״מ)","select",["5","10","21.1"]],
-["goalTime","זמן יעד בדקות, למשל 60 (אפשר להשאיר ריק)","number"],
+["goalTime","זמן יעד בדקות, למשל 60 (אפשר להשאיר ריק, והזמן יוערך מריצת המדדים)","number"],
 ["raceDate","תאריך מירוץ, אם יש","date"],
 ["maxHR","דופק מקסימלי ידוע, אם יש (אחרת נערוך מהגיל)","number"],
 ["strength","אימוני כוח או ספורט אחר בשבוע?","select",["כן","לא"]],
@@ -15,6 +15,8 @@ const F=[
 ];
 const Q=["כאב או לחץ בחזה בזמן מאמץ","סחרחור או התעלפות","רופא אמר שיש בעיה בלב או לחץ דם גבוה","בעיה בעצמות או במפרקים שמתחמרת מריצה","הריון או חודשים ספורים אחרי לידה"];
 const pc=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+const ms=t=>{const p=String(t||"").split(":").map(Number);return p.some(isNaN)?0:p.length===3?p[0]*3600+p[1]*60+p[2]:p.length===2?p[0]*60+p[1]:0};
+const BD="ריצת מדדים: הצעד הראשון לתכנית שמותאמת אליך.\nחימום: 5 דק׳ הליכה מהירה.\nעיקר: 12 דק׳ ריצה רציפה בקצב שאפשר להחזיק בנוחות מאתגרת (מאמץ 6–7 מתוך 10, אפשר לומר רק משפטים קצרים). לא מתחילים מהר מדי. מותר לעבור להליכה אם צריך, ורושמים את המרחק הכולל שהתקבל ב-12 הדקות.\nשחרור: 5 דק׳ הליכה.\nאחרי האימון: לחץ על האימון, מלא ק״מ בפועל, זמן (12:00) ודופק ממוצע, ושמור. אחר כך לחץ על הכפתור לבניית התכנית.\nכאב בחזה, סחרחור או כאב חד: עוצרים.";
 
 function gen(p){
   const mx=p.maxHR||Math.round(208-0.7*p.age),H=(a,b)=>Math.round(mx*a)+"–"+Math.round(mx*b);
@@ -42,12 +44,12 @@ function gen(p){
         add(date,{title:lg+" ק״מ ארוך",type:"long",km:lg,desc:L(lg,P(75,105),H(.7,.82),"אזור 2 רוב הדרך, אזור 3 בחצי השני")+nt});
       }else if(d===qd&&!last&&w>=2&&w%4!==3){
         if(w%2===0){const m=Math.min(25,10+Math.floor(w/2)*5),k=Math.round((15+m)*60/ep*2)/2;
-          add(date,{title:"טמפו "+m+" דק׳",type:"quality",km:k,desc:L(k+" (כולל","חימום 10 דק׳, "+m+" דק׳ בקצב "+P(15,30)+", שחרור 5 דק׳","בטמפו "+H(.85,.92),"חימום ושחרור באזור 1–2, טמפו באזור 4").replace("(כולל","")});
+          add(date,{title:"טמפו "+m+" דק׳",type:"quality",km:k,desc:L(k,"חימום 10 דק׳, "+m+" דק׳ בקצב "+P(15,30)+", שחרור 5 דק׳","בטמפו "+H(.85,.92),"חימום ושחרור באזורים 1–2, טמפו באזור 4")});
         }else{const r=Math.min(6,3+Math.floor(w/3)),k=Math.round((15+r*4)*60/ep*2)/2;
           add(date,{title:"אינטרוולים "+r+"×2",type:"quality",km:k,desc:L(k,"חימום 10 דק׳, "+r+"×(2 דק׳ מהיר בקצב "+P(-30,-15)+" + 2 דק׳ התאוששות), שחרור 5 דק׳","במהירות "+H(.9,.95),"בהתאוששות יורדים לאזור 2")});}
       }else{
-        const s=d===qd&&!last&&w<2||d===qd&&last;
-        add(date,{title:(w<2&&beg?Math.max(2,E-1):E)+" ק״מ קל"+(s?" + האצות":""),type:"easy",km:w<2&&beg?Math.max(2,E-1):E,desc:L(w<2&&beg?Math.max(2,E-1):E,P(60,90),H(.7,.8),"אזור 2 רוב הזמן, אזור 3 עד רבע, אזורים 4–5: לא")+(s?"\nבסוף: 4 האצות של 15–20 שנ׳, הליכה בין האצות":"")+nt});
+        const s=d===qd&&!last&&w<2||d===qd&&last,ek=w<2&&beg?Math.max(2,E-1):E;
+        add(date,{title:ek+" ק״מ קל"+(s?" + האצות":""),type:"easy",km:ek,desc:L(ek,P(60,90),H(.7,.8),"אזור 2 רוב הזמן, אזור 3 עד רבע, אזורים 4–5: לא")+(s?"\nבסוף: 4 האצות של 15–20 שנ׳, הליכה בין האצות":"")+nt});
       }
     }
   }
@@ -64,16 +66,33 @@ function useplan(plan,ds){
   persist();render();
 }
 
+// After the baseline run: calibrate the goal time from the measured pace and build the full plan.
+function banner(profile){
+  if(document.getElementById("bn"))return;
+  const b=document.createElement("div");b.id="bn";b.className="top";
+  b.innerHTML='<span class="desc">הצעד הראשון: ריצת מדדים. אחריה מולאים את התוצאות באימון ולוחצים כאן.</span><button class="p" id="bn_go">בנה לי תכנית</button>';
+  $("#msg").after(b);
+  document.getElementById("bn_go").onclick=async()=>{
+    const t=W.b01,r=(t&&t.res)||{},km=+String(r.km||"").replace(",","."),s=ms(r.time);
+    if(!(km>0&&s>0))return alert("מלא קודם את הק״מ והזמן של ריצת המדדים (לחץ על האימון בלוח)");
+    const p=Object.assign({},profile);delete p.stage;p.testKm=km;p.testSec=s;if(+r.hr)p.testHr=+r.hr;
+    if(!p.goalTime)p.goalTime=Math.round(s/km*1.06*p.goalKm/60);
+    const plan=Object.assign({b01:Object.assign({},t,{done:true})},gen(p));
+    try{await CL.raw(USER.uid,{profile:JSON.stringify(p),plan:JSON.stringify(plan),data:"{}",updated:Date.now()})}catch(e){return alert("השמירה נכשלה, נסה שוב")}
+    useplan(plan,"{}");b.remove();
+  };
+}
+
 function form(){
   const dl=document.createElement("dialog");
-  let h='<b>ברוך הבא! כמה שאלות כדי לבנות לך תכנית</b><div class="desc">התשובות נשמרות בחשבון שלך. התכנית היא הכוונה כללית ואינה ייעוץ רפואי.</div>';
+  let h='<b>ברוך הבא! כמה שאלות כדי להתחיל</b><div class="desc">התשובות נשמרות בחשבון שלך. אחריהן תקבל ריצת מדדים קצרה, ומהתוצאות נבנה את התכנית. התכנית היא הכוונה כללית ואינה ייעוץ רפואי.</div>';
   F.forEach(([k,l,t,o])=>{
     h+='<label>'+l+(o?'<select id="ob_'+k+'">'+o.map((x,i)=>'<option value="'+i+'">'+x+'</option>').join("")+'</select>':'<input id="ob_'+k+'" type="'+t+'">')+'</label>';
   });
   h+='<label>באילו ימים אפשר לרוץ (2–5)?</label><div class="row">'+DN.map((d,i)=>'<label><input type="checkbox" class="obd" value="'+i+'" style="width:auto"> '+d+'</label>').join("")+'</div>';
   h+='<label>יום הריצה הארוכה<select id="ob_ld">'+DN.map((d,i)=>'<option value="'+i+'">'+d+'</option>').join("")+'</select></label>';
-  h+='<label>בריאות: סמן אם יש אחד מהבאים</label>'+Q.map((q,i)=>'<label><input type="checkbox" class="obq" style="width:auto"> '+q+'</label>').join("");
-  h+='<div id="ob_err" class="desc"></div><div class="act"><button class="p" id="ob_ok">בנה לי תכנית</button><button id="ob_skip">דלג (תכנית כללית)</button></div>';
+  h+='<label>בריאות: סמן אם יש אחד מהבאים</label>'+Q.map(q=>'<label><input type="checkbox" class="obq" style="width:auto"> '+q+'</label>').join("");
+  h+='<div id="ob_err" class="desc"></div><div class="act"><button class="p" id="ob_ok">המשך לריצת מדדים</button><button id="ob_skip">דלג (תכנית כללית)</button></div>';
   dl.innerHTML=h;document.body.appendChild(dl);dl.showModal();
   const v=k=>document.getElementById("ob_"+k).value,err=m=>{document.getElementById("ob_err").textContent=m};
   document.getElementById("ob_skip").onclick=async()=>{try{await CL.raw(USER.uid,{profile:'{"skipped":true}'})}catch(e){}dl.close()};
@@ -83,16 +102,19 @@ function form(){
     if(ds.length<2||ds.length>5)return err("סמן בין 2 ל-5 ימים");
     if(dl.querySelector(".obq:checked")&&!confirm("סימנת שיש בעיה רפואית שעלולה להשפיע על ריצה. מומלץ להתייעץ עם רופא לפני שמתחילים. להמשיך בכל זאת?"))return;
     const ld=+v("ld");
-    const p={name:v("name"),age:+v("age"),layoffIdx:+v("layoff"),weekKmIdx:+v("weekKm"),longest:+v("longest")||0,goalKm:[5,10,21.1][+v("goalKm")],goalTime:+v("goalTime")||0,raceDate:v("raceDate"),maxHR:+v("maxHR")||0,strength:v("strength")=="0",injury:v("injury").trim(),days:ds,longDay:ds.includes(ld)?ld:ds[ds.length-1]};
-    const plan=gen(p);
+    const p={name:v("name"),age:+v("age"),layoffIdx:+v("layoff"),weekKmIdx:+v("weekKm"),longest:+v("longest")||0,goalKm:[5,10,21.1][+v("goalKm")],goalTime:+v("goalTime")||0,raceDate:v("raceDate"),maxHR:+v("maxHR")||0,strength:v("strength")=="0",injury:v("injury").trim(),days:ds,longDay:ds.includes(ld)?ld:ds[ds.length-1],stage:"baseline"};
+    const t=new Date();t.setHours(12,0,0,0);const tm=new Date(t.getTime()+864e5);
+    const plan={b01:{date:ymd(tm),title:"ריצת מדדים 12 דק׳",type:"quality",km:2,done:false,desc:BD}};
     try{await CL.raw(USER.uid,{profile:JSON.stringify(p),plan:JSON.stringify(plan),data:"{}",updated:Date.now()})}catch(e){return err("השמירה נכשלה, נסה שוב")}
-    useplan(plan,"{}");dl.close();
+    useplan(plan,"{}");dl.close();banner(p);
   };
 }
 
 window.afterLogin=function(){
   const d=window.CLOUD_DOC;
-  if(d&&d.plan)useplan(JSON.parse(d.plan),d.data);
-  else if(!d||!d.profile)form();
+  if(d&&d.plan){
+    useplan(JSON.parse(d.plan),d.data);
+    try{const p=JSON.parse(d.profile||"{}");if(p.stage==="baseline")banner(p)}catch(e){}
+  }else if(!d||!d.profile)form();
 };
 })();
