@@ -1,7 +1,7 @@
-// Feature scripts (username login, statistics, schedule overrides). They are loaded from here because index.html imports this file on every start.
-for (const f of ["auth.js", "stats.js", "schedule.js"]) {
+// Feature scripts (username login, statistics, schedule overrides, description cleanup). They are loaded from here because index.html imports this file on every start.
+for (const f of ["auth.js", "stats.js", "schedule.js", "clean.js"]) {
   const s = document.createElement("script");
-  s.src = f + "?v=3";
+  s.src = f + "?v=4";
   document.body.appendChild(s);
 }
 
